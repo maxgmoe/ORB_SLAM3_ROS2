@@ -48,8 +48,8 @@ StereoSlamNode::StereoSlamNode(ORB_SLAM3::System* pSLAM, const string &strSettin
         cv::initUndistortRectifyMap(K_r,D_r,R_r,P_r.rowRange(0,3).colRange(0,3),cv::Size(cols_r,rows_r),CV_32F,M1r,M2r);
     }
 
-    left_sub = std::make_shared<message_filters::Subscriber<ImageMsg> >(this, "camera/left");
-    right_sub = std::make_shared<message_filters::Subscriber<ImageMsg> >(this, "camera/right");
+    left_sub = std::make_shared<message_filters::Subscriber<ImageMsg> >(this, "/camera_left/image_color");
+    right_sub = std::make_shared<message_filters::Subscriber<ImageMsg> >(this, "/camera_right/image_color");
 
     syncApproximate = std::make_shared<message_filters::Synchronizer<approximate_sync_policy> >(approximate_sync_policy(10), *left_sub, *right_sub);
     syncApproximate->registerCallback(&StereoSlamNode::GrabStereo, this);
@@ -60,8 +60,11 @@ StereoSlamNode::~StereoSlamNode()
     // Stop all threads
     m_SLAM->Shutdown();
 
-    // Save camera trajectory
     m_SLAM->SaveKeyFrameTrajectoryTUM("KeyFrameTrajectory.txt");
+    m_SLAM->SaveTrajectoryEuRoC("CameraTrajectory.txt");
+    m_SLAM->SaveMapPoints("MapPoints.txt");
+
+    m_SLAM->OutputEvaluationParams();
 }
 
 void StereoSlamNode::GrabStereo(const ImageMsg::SharedPtr msgLeft, const ImageMsg::SharedPtr msgRight)
