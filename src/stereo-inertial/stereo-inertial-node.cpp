@@ -91,9 +91,9 @@ void StereoInertialNode::GrabImageLeft(const ImageMsg::SharedPtr msgLeft)
 {
     bufMutexLeft_.lock();
 
-    if (!imgLeftBuf_.empty())
-        imgLeftBuf_.pop();
     imgLeftBuf_.push(msgLeft);
+    if (imgLeftBuf_.size() > 10)
+        imgLeftBuf_.pop();
 
     bufMutexLeft_.unlock();
 }
@@ -102,9 +102,9 @@ void StereoInertialNode::GrabImageRight(const ImageMsg::SharedPtr msgRight)
 {
     bufMutexRight_.lock();
 
-    if (!imgRightBuf_.empty())
-        imgRightBuf_.pop();
     imgRightBuf_.push(msgRight);
+    if (imgRightBuf_.size() > 10)
+        imgRightBuf_.pop();
 
     bufMutexRight_.unlock();
 }
@@ -138,7 +138,7 @@ void StereoInertialNode::SyncWithImu()
 {
     const double maxTimeDiff = 0.01;
 
-    while (1)
+    while (rclcpp::ok())
     {
         cv::Mat imLeft, imRight;
         double tImLeft = 0, tImRight = 0;
