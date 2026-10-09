@@ -20,7 +20,7 @@ using ImageMsg = sensor_msgs::msg::Image;
 class StereoInertialNode : public rclcpp::Node
 {
 public:
-    StereoInertialNode(ORB_SLAM3::System* pSLAM, const string &strSettingsFile, const string &strDoRectify, const string &strDoEqual);
+    StereoInertialNode(ORB_SLAM3::System* pSLAM, const string &strSettingsFile, const string &strDoRectify);
     ~StereoInertialNode();
 
 private:
@@ -46,11 +46,15 @@ private:
     std::mutex bufMutexLeft_, bufMutexRight_;
 
     bool doRectify_;
-    bool doEqual_;
+    // bool doEqual_;
     cv::Mat M1l_, M2l_, M1r_, M2r_;
 
-    bool bClahe_;
-    cv::Ptr<cv::CLAHE> clahe_ = cv::createCLAHE(3.0, cv::Size(8, 8));
+    // bool bClahe_;
+    // cv::Ptr<cv::CLAHE> clahe_ = cv::createCLAHE(3.0, cv::Size(8, 8));
+
+    // Validation
+    int nLeftCounter_ = 0;
+    int nRightCounter_ = 0;
 };
 
 #endif

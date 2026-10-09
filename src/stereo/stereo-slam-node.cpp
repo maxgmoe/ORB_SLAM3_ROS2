@@ -9,10 +9,17 @@ StereoSlamNode::StereoSlamNode(ORB_SLAM3::System* pSLAM, const string &strSettin
 :   Node("ORB_SLAM3_ROS2"),
     m_SLAM(pSLAM)
 {
-    stringstream ss(strDoRectify);
-    ss >> boolalpha >> doRectify;
+    //stringstream ss(strDoRectify);
+    //ss >> boolalpha >> doRectify;
 
-    if (doRectify){
+    doRectify_ = std::stoi(strDoRectify);
+    // doEqual_ = std::stoi(strDoEqual);
+
+    //bClahe_ = doEqual_;
+    std::cout << "Rectify: " << doRectify_ << std::endl;
+    // std::cout << "Equal: " << doEqual_ << std::endl;
+
+    if (doRectify_){
 
         cv::FileStorage fsSettings(strSettingsFile, cv::FileStorage::READ);
         if(!fsSettings.isOpened()){
@@ -61,7 +68,7 @@ StereoSlamNode::~StereoSlamNode()
     m_SLAM->Shutdown();
 
     m_SLAM->SaveKeyFrameTrajectoryTUM("KeyFrameTrajectory.txt");
-    m_SLAM->SaveTrajectoryEuRoC("CameraTrajectory.txt");
+    m_SLAM->SaveTrajectoryTUM("CameraTrajectory.txt");
     m_SLAM->SaveMapPoints("MapPoints.txt");
 
     m_SLAM->OutputEvaluationParams();
@@ -69,10 +76,12 @@ StereoSlamNode::~StereoSlamNode()
 
 void StereoSlamNode::GrabStereo(const ImageMsg::SharedPtr msgLeft, const ImageMsg::SharedPtr msgRight)
 {
-    // Copy the ros rgb image message to cv::Mat.
+    // Copy the left ros image message to cv::Mat with bgr encoding
+    // this enables the custom channel weighting before converting to grayscale -> Tracking.cc
+    // cv_bridge handles the ROS bayer_rggb8 (BayerBG in OpenCV) conversion to mono8, bgr8 or rgb8
     try
     {
-        cv_ptrLeft = cv_bridge::toCvShare(msgLeft);
+        cv_ptrLeft = cv_bridge::toCvShare(msgLeft, "bgr8");
     }
     catch (cv_bridge::Exception& e)
     {
@@ -80,10 +89,10 @@ void StereoSlamNode::GrabStereo(const ImageMsg::SharedPtr msgLeft, const ImageMs
         return;
     }
 
-    // Copy the ros depth image message to cv::Mat.
+    // Copy the right ros image message to cv::Mat.
     try
     {
-        cv_ptrRight = cv_bridge::toCvShare(msgRight);
+        cv_ptrRight = cv_bridge::toCvShare(msgRight, "bgr8");
     }
     catch (cv_bridge::Exception& e)
     {
@@ -91,14 +100,32 @@ void StereoSlamNode::GrabStereo(const ImageMsg::SharedPtr msgLeft, const ImageMs
         return;
     }
 
-    if (doRectify){
-        cv::Mat imLeft, imRight;
-        cv::remap(cv_ptrLeft->image,imLeft,M1l,M2l,cv::INTER_LINEAR);
-        cv::remap(cv_ptrRight->image,imRight,M1r,M2r,cv::INTER_LINEAR);
-        m_SLAM->TrackStereo(imLeft, imRight, Utility::StampToSec(msgLeft->header.stamp));
+    cv::Mat imLeft, imRight;
+    double t = Utility::StampToSec(msgLeft->header.stamp);
+
+    imLeft = cv_ptrLeft->image;
+    imRight = cv_ptrRight->image;
+
+    // // set equalization to true for CLAHE
+    // if (bClahe_)
+    // {
+    //     clahe_->apply(imLeft, imLeft);
+    //     clahe_->apply(imRight, imRight);
+    // }
+
+    if (doRectify_){
+        cv::remap(imLeft,imLeft,M1l,M2l,cv::INTER_LINEAR);
+        cv::remap(imRight,imRight,M1r,M2r,cv::INTER_LINEAR);
     }
-    else
-    {
-        m_SLAM->TrackStereo(cv_ptrLeft->image, cv_ptrRight->image, Utility::StampToSec(msgLeft->header.stamp));
-    }
+    
+    m_SLAM->TrackStereo(imLeft, imRight, t);
+
+    // states definition from enum in Tracking.h
+    static const char* states[] = {"NO_IMAGES_YET", "NOT_INITIALIZED", "OK", "RECENTLY_LOST", "LOST", "OK_KLT"};
+    int state = m_SLAM->GetTrackingState();
+    const char* name = (state >= 0 && state <= 5) ? states[state] : "SYSTEM_NOT_READY";
+
+
+    RCLCPP_INFO(this->get_logger(), "frame %.3f processed, state: %s", t, name);
+
 }

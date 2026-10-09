@@ -4,19 +4,22 @@
 
 using std::placeholders::_1;
 
-StereoInertialNode::StereoInertialNode(ORB_SLAM3::System *SLAM, const string &strSettingsFile, const string &strDoRectify, const string &strDoEqual) :
+StereoInertialNode::StereoInertialNode(ORB_SLAM3::System *SLAM, const string &strSettingsFile, const string &strDoRectify) :
     Node("ORB_SLAM3_ROS2"),
     SLAM_(SLAM)
 {
-    stringstream ss_rec(strDoRectify);
-    ss_rec >> boolalpha >> doRectify_;
+    //stringstream ss_rec(strDoRectify);
+    //ss_rec >> boolalpha >> doRectify_;
 
-    stringstream ss_eq(strDoEqual);
-    ss_eq >> boolalpha >> doEqual_;
+    //stringstream ss_eq(strDoEqual);
+    //ss_eq >> boolalpha >> doEqual_;
 
-    bClahe_ = doEqual_;
+    doRectify_ = std::stoi(strDoRectify);
+    //doEqual_ = std::stoi(strDoEqual);
+
+    //bClahe_ = doEqual_;
     std::cout << "Rectify: " << doRectify_ << std::endl;
-    std::cout << "Equal: " << doEqual_ << std::endl;
+    //std::cout << "Equal: " << doEqual_ << std::endl;
 
     if (doRectify_)
     {
@@ -74,9 +77,10 @@ StereoInertialNode::~StereoInertialNode()
     SLAM_->Shutdown();
 
     SLAM_->SaveKeyFrameTrajectoryTUM("KeyFrameTrajectory.txt");
-    SLAM_->SaveTrajectoryEuRoC("CameraTrajectory.txt");
+    SLAM_->SaveTrajectoryTUM("CameraTrajectory.txt");
     SLAM_->SaveMapPoints("MapPoints.txt");
 
+    SLAM_->OutputValidationParams(nLeftCounter_, nRightCounter_);
     SLAM_->OutputEvaluationParams();
 }
 
@@ -92,7 +96,9 @@ void StereoInertialNode::GrabImageLeft(const ImageMsg::SharedPtr msgLeft)
     bufMutexLeft_.lock();
 
     imgLeftBuf_.push(msgLeft);
-    if (imgLeftBuf_.size() > 10)
+    nLeftCounter_++;
+
+    if (imgLeftBuf_.size() > 1)
         imgLeftBuf_.pop();
 
     bufMutexLeft_.unlock();
@@ -103,7 +109,9 @@ void StereoInertialNode::GrabImageRight(const ImageMsg::SharedPtr msgRight)
     bufMutexRight_.lock();
 
     imgRightBuf_.push(msgRight);
-    if (imgRightBuf_.size() > 10)
+    nRightCounter_++;
+
+    if (imgRightBuf_.size() > 1)
         imgRightBuf_.pop();
 
     bufMutexRight_.unlock();
@@ -111,19 +119,22 @@ void StereoInertialNode::GrabImageRight(const ImageMsg::SharedPtr msgRight)
 
 cv::Mat StereoInertialNode::GetImage(const ImageMsg::SharedPtr msg)
 {
-    // Copy the ros image message to cv::Mat.
+    // Copy the ros image message to cv::Mat with bgr encoding
+    // this enables the custom channel weighting before converting to grayscale -> Tracking.cc
+    // cv_bridge handles the ROS bayer_rggb8 (BayerBG in OpenCV) conversion to mono8, bgr8 or rgb8
+    // mono8 provides only one grayscale channel, others 3 channel
     cv_bridge::CvImageConstPtr cv_ptr;
 
     try
     {
-        cv_ptr = cv_bridge::toCvShare(msg, sensor_msgs::image_encodings::MONO8);
+        cv_ptr = cv_bridge::toCvShare(msg, sensor_msgs::image_encodings::BGR8);
     }
     catch (cv_bridge::Exception &e)
     {
         RCLCPP_ERROR(this->get_logger(), "cv_bridge exception: %s", e.what());
     }
 
-    if (cv_ptr->image.type() == 0)
+    if (cv_ptr->image.type() == CV_8UC1 || cv_ptr->image.type() == CV_8UC3)
     {
         return cv_ptr->image.clone();
     }
@@ -140,6 +151,9 @@ void StereoInertialNode::SyncWithImu()
 
     while (rclcpp::ok())
     {
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        
         cv::Mat imLeft, imRight;
         double tImLeft = 0, tImRight = 0;
         if (!imgLeftBuf_.empty() && !imgRightBuf_.empty() && !imuBuf_.empty())
@@ -165,7 +179,7 @@ void StereoInertialNode::SyncWithImu()
 
             if ((tImLeft - tImRight) > maxTimeDiff || (tImRight - tImLeft) > maxTimeDiff)
             {
-                std::cout << "big time difference" << std::endl;
+                std::cout << "big time difference: " << (tImLeft - tImRight) * 1000.0 << " ms" << std::endl;
                 continue;
             }
             if (tImLeft > Utility::StampToSec(imuBuf_.back()->header.stamp))
@@ -198,11 +212,12 @@ void StereoInertialNode::SyncWithImu()
             }
             bufMutex_.unlock();
 
-            if (bClahe_)
-            {
-                clahe_->apply(imLeft, imLeft);
-                clahe_->apply(imRight, imRight);
-            }
+            // set equalization to true for CLAHE
+            // if (bClahe_)
+            // {
+            //     clahe_->apply(imLeft, imLeft);
+            //     clahe_->apply(imRight, imRight);
+            // }
 
             if (doRectify_)
             {
@@ -212,8 +227,13 @@ void StereoInertialNode::SyncWithImu()
 
             SLAM_->TrackStereo(imLeft, imRight, tImLeft, vImuMeas);
 
-            std::chrono::milliseconds tSleep(1);
-            std::this_thread::sleep_for(tSleep);
+            // states definition from enum in Tracking.h
+            static const char* states[] = {"NO_IMAGES_YET", "NOT_INITIALIZED", "OK", "RECENTLY_LOST", "LOST", "OK_KLT"};
+            int state = SLAM_->GetTrackingState();
+            const char* name = (state >= 0 && state <= 5) ? states[state] : "SYSTEM_NOT_READY";
+
+            RCLCPP_INFO(this->get_logger(), "frame %.3f processed, state: %s",
+                        tImLeft, name);
         }
     }
 }

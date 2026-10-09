@@ -37,6 +37,11 @@ $ git clone https://github.com/zang09/ORB_SLAM3_ROS2.git orbslam3_ros2
 
 3. Change this [line](https://github.com/zang09/ORB_SLAM3_ROS2/blob/ee82428ed627922058b93fea1d647725c813584e/CMakeModules/FindORB_SLAM3.cmake#L8) to your own `ORB_SLAM3` path
 
+4. Add the following environmental variable to your `~/.bashrc` for the ROS2 Wrapper to locate the ORBSLAM3 library:
+```
+export LD_LIBRARY_PATH="ORB_SLAM3_ROOT_DIR_PATH/lib/:${LD_LIBRARY_PATH}"
+```
+
 Now, you are ready to build!
 ```
 $ cd ~/colcon_ws

@@ -32,7 +32,8 @@ private:
 
     ORB_SLAM3::System* m_SLAM;
 
-    bool doRectify;
+    int doRectify_;
+    int doEqual_;
     cv::Mat M1l,M2l,M1r,M2r;
 
     cv_bridge::CvImageConstPtr cv_ptrLeft;
@@ -42,6 +43,9 @@ private:
     std::shared_ptr<message_filters::Subscriber<sensor_msgs::msg::Image> > right_sub;
 
     std::shared_ptr<message_filters::Synchronizer<approximate_sync_policy> > syncApproximate;
+
+    //bool bClahe_;
+    //cv::Ptr<cv::CLAHE> clahe_ = cv::createCLAHE(3.0, cv::Size(8, 8));
 };
 
 #endif
